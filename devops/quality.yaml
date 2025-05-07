@@ -1,0 +1,55 @@
+jobs:
+  - job: quality_check
+    dependsOn: []
+    displayName: Quality Check
+    pool: default
+    container: python3_9
+
+    steps:
+      - checkout: self
+
+      - script: |
+          apt-get update
+          apt-get install -y openjdk-17-jre  # SonarQube needs Java
+        displayName: 'Install Java for SonarQube'
+
+      - task: SonarQubePrepare@7
+        inputs:
+          SonarQube: 'sonarqube service connection'
+          scannerMode: 'CLI'
+          configMode: 'file'
+          configFile: 'devops/sonar-project.properties'
+
+      - script: |
+          set -e  # Exit on first error
+
+          # Install Poetry if not already installed
+          curl -sSL https://install.python-poetry.org | python3 -
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Install dependencies
+          poetry install
+
+          # Run tests with coverage
+          poetry run pytest --junitxml=reports/test-report.xml --cov=fastapi-project-tut --cov-report=xml:reports/coverage-report.xml
+        displayName: 'Install Poetry & Run Unit Tests with Coverage'
+
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: '$(Build.SourcesDirectory)/reports/test-report.xml'
+          failTaskOnFailedTests: true
+          testRunTitle: 'Publish Unit Test Results'
+
+      - task: PublishCodeCoverageResults@2
+        inputs:
+          codeCoverageTool: 'Cobertura'
+          summaryFileLocation: '$(Build.SourcesDirectory)/reports/coverage-report.xml'
+          failIfCoverageEmpty: true
+
+      - task: SonarQubeAnalyze@7
+
+      - task: SonarQubePublish@7
+        inputs:
+          pollingTimeoutSec: '300'
